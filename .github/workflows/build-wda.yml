@@ -1,0 +1,57 @@
+name: Build WebDriverAgent
+
+  on:
+    workflow_dispatch:
+      inputs:
+        bundle_id:
+          description: 'Bundle ID prefix (e.g., com.yourname)'
+          required: true
+          default: 'com.test'
+
+  jobs:
+    build:
+      runs-on: macos-14
+
+      steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone WebDriverAgent
+        run: |
+          git clone https://github.com/appium/WebDriverAgent.git
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build WebDriverAgent
+        run: |
+          cd WebDriverAgent
+          BUNDLE_ID="${{ github.event.inputs.bundle_id }}.WebDriverAgentRunner"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${BUNDLE_ID}" WebDriverAgentRunner/Info.plist
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Create IPA
+        run: |
+          cd WebDriverAgent
+          APP_PATH=$(find ./build -name "WebDriverAgentRunner-Runner.app" -type d | head -1)
+          rm -rf "$APP_PATH/Frameworks/XC"*.framework 2>/dev/null || true
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r ../WebDriverAgent-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebDriverAgent-unsigned
+          path: WebDriverAgent-unsigned.ipa
+          retention-days: 7
